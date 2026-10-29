@@ -1,22 +1,21 @@
 package com.mycelium.launcher.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.ui.graphics.Path
@@ -25,7 +24,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -35,6 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.mycelium.launcher.data.LauncherState
 import com.mycelium.launcher.ui.theme.Fern
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -100,22 +102,45 @@ val RoseShape = GenericShape { size, _ ->
     addOval(androidx.compose.ui.geometry.Rect(Offset(cx, cy), rr * 0.7f))
 }
 
-/** Draws a top-down rose tinted by [accent]. */
+/** Plain sRGB mix — avoids colour-space conversions entirely. */
+private fun mix(a: Color, b: Color, t: Float): Color {
+    val k = t.coerceIn(0f, 1f)
+    return Color(
+        red = a.red + (b.red - a.red) * k,
+        green = a.green + (b.green - a.green) * k,
+        blue = a.blue + (b.blue - a.blue) * k,
+        alpha = 1f,
+    )
+}
+
+private val WHITE = Color(1f, 1f, 1f)
+private val BLACK = Color(0f, 0f, 0f)
+
+/** Draws a top-down rose tinted by [accent]. Solid fills only, so it renders the same everywhere. */
 fun DrawScope.drawRose(accent: Color) {
     val cx = size.width / 2
     val cy = size.height / 2
+    val c = Offset(cx, cy)
     val r = size.minDimension / 2
     val rr = r * ROSE_SCALE
-    val deep = Color(accent.red * 0.5f, accent.green * 0.5f, accent.blue * 0.5f)
-    val light = lerp(accent, Color.White, 0.5f)
+    val acc = Color(accent.red, accent.green, accent.blue)
+    val deep = mix(acc, BLACK, 0.55f)
+    val light = mix(acc, WHITE, 0.45f)
+
+    // soft drop shadow under the whole flower
+    for (i in 6 downTo 1) {
+        drawCircle(BLACK.copy(alpha = 0.06f), radius = rr * (0.9f + i * 0.04f), center = Offset(cx, cy + r * 0.05f))
+    }
 
     // leaves
+    val leafDark = mix(Fern, BLACK, 0.35f)
     LEAF_ANGLES.forEach { ang ->
         val leaf = Path().apply { addLeaf(cx, cy, r, ang) }
-        drawPath(leaf, Brush.radialGradient(listOf(lerp(Fern, Color.White, 0.12f), Fern, lerp(Fern, Color.Black, 0.3f)), Offset(cx, cy), r))
+        drawPath(leaf, Fern)
+        drawPath(leaf, leafDark, style = Stroke(width = r * 0.02f))
         val a = rad(ang)
         drawLine(
-            lerp(Fern, Color.Black, 0.4f),
+            leafDark,
             Offset(cx + cos(a) * 0.5f * r, cy + sin(a) * 0.5f * r),
             Offset(cx + cos(a) * 0.95f * r, cy + sin(a) * 0.95f * r),
             strokeWidth = r * 0.025f,
@@ -126,40 +151,26 @@ fun DrawScope.drawRose(accent: Color) {
     LAYERS.forEachIndexed { li, (rOut, n, rot) ->
         val rIn = rOut * 0.18f
         val depth = li / (LAYERS.size - 1f)
-        // shadow this ring casts onto the ring below
+        // shadow this ring casts on the ring below it: a few translucent discs
         if (li > 0) {
-            val outer = (rOut + 0.16f) * rr
-            drawCircle(
-                Brush.radialGradient(
-                    0f to Color.Transparent,
-                    (rOut * 0.85f * rr / outer) to Color.Transparent,
-                    (rOut * rr / outer) to Color.Black.copy(alpha = 0.4f),
-                    1f to Color.Transparent,
-                    center = Offset(cx, cy),
-                    radius = outer,
-                ),
-                radius = outer,
-                center = Offset(cx, cy),
-            )
+            for (i in 3 downTo 1) {
+                drawCircle(BLACK.copy(alpha = 0.10f), radius = rr * (rOut + i * 0.03f), center = c)
+            }
         }
-        val base = lerp(deep, Color.Black, 0.2f * depth)
-        val tip = lerp(light, deep, 0.15f * depth)
-        val petalBrush = Brush.radialGradient(
-            0f to base,
-            (rIn / rOut) to base,
-            ((rIn / rOut) + (1 - rIn / rOut) * 0.45f) to lerp(base, tip, 0.35f),
-            1f to tip,
-            center = Offset(cx, cy),
-            radius = rOut * rr,
-        )
+        // outer rings lighter, centre deeper — like looking into the cup of a rose
+        val body = mix(light, deep, 0.15f + 0.6f * depth)
+        val rim = mix(body, WHITE, 0.35f)
         val hw = PI_F / n * 1.25f
         for (k in 0 until n) {
             val ang = rad(rot) + k * 2 * PI_F / n
             val petal = Path().apply { addPetal(cx, cy, rr, rIn, rOut, ang, hw) }
-            // soft overlap shadow from the neighbouring petal
-            rotate(-5f, Offset(cx, cy)) { drawPath(petal, Color.Black.copy(alpha = 0.18f)) }
-            drawPath(petal, petalBrush)
-            drawPath(petal, lerp(light, Color.White, 0.4f).copy(alpha = 0.5f), style = Stroke(width = r * 0.018f))
+            // overlap shadow from the neighbouring petal
+            rotate(-6f, c) { drawPath(petal, BLACK.copy(alpha = 0.22f)) }
+            drawPath(petal, body)
+            // inner shading: a smaller, darker copy of the petal toward its base
+            val inner = Path().apply { addPetal(cx, cy, rr, rIn, rIn + (rOut - rIn) * 0.55f, ang, hw * 0.85f) }
+            drawPath(inner, mix(body, deep, 0.45f).copy(alpha = 0.55f))
+            drawPath(petal, rim.copy(alpha = 0.7f), style = Stroke(width = r * 0.02f))
         }
     }
 
@@ -174,7 +185,7 @@ fun DrawScope.drawRose(accent: Color) {
         first = false
         t += 0.05f
     }
-    drawPath(swirl, Color(deep.red * 0.6f, deep.green * 0.6f, deep.blue * 0.6f), style = Stroke(width = rr * 0.03f, cap = StrokeCap.Round))
+    drawPath(swirl, mix(deep, BLACK, 0.4f), style = Stroke(width = rr * 0.03f, cap = StrokeCap.Round))
 }
 
 /**
@@ -182,6 +193,8 @@ fun DrawScope.drawRose(accent: Color) {
  *  - single tap  → app archive
  *  - double tap  → UI settings
  *  - press & hold, then drag → move it anywhere (position is saved)
+ *
+ * All three are handled by one gesture loop so they can't fight each other.
  */
 @Composable
 fun RoseButton(
@@ -197,61 +210,102 @@ fun RoseButton(
     val tap by rememberUpdatedState(onTap)
     val doubleTap by rememberUpdatedState(onDoubleTap)
 
-    var pos by remember(areaW, areaH, state.buttonX, state.buttonY) {
-        mutableStateOf(
-            Offset(
+    var pos by remember { mutableStateOf(Offset.Unspecified) }
+    // (Re)place from saved fractions when first shown, when the screen size changes, or after "Reset position".
+    LaunchedEffect(areaW, areaH, state.buttonX, state.buttonY) {
+        if (areaW > 0 && areaH > 0) {
+            pos = Offset(
                 (state.buttonX * areaW - sizePx / 2).coerceIn(0f, (areaW - sizePx).coerceAtLeast(0f)),
                 (state.buttonY * areaH - sizePx / 2).coerceIn(0f, (areaH - sizePx).coerceAtLeast(0f)),
             )
-        )
+        }
     }
     var dragging by remember { mutableStateOf(false) }
     val accent = state.accent
-
-    // Only react to touches on the flower itself, not the empty corners of its square.
-    fun onRose(p: Offset) = hypot(p.x - sizePx / 2, p.y - sizePx / 2) <= sizePx / 2 * 0.95f
+    if (pos == Offset.Unspecified) return
 
     Box(
         Modifier
             .zIndex(2f)
             .offset { IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) }
             .size(sizeDp)
-            .graphicsLayer {
-                val s = if (dragging) 1.15f else 1f
-                scaleX = s
-                scaleY = s
-                rotationZ = if (dragging) 12f else 0f
-            }
-            .shadow(10.dp, RoseShape)
-            // Outer: taps. Inner: long-press drag (consumes the release, so a hold never counts as a tap).
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { if (onRose(it)) tap() },
-                    onDoubleTap = { if (onRose(it)) doubleTap() },
-                )
-            }
-            .pointerInput(areaW, areaH) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = {
-                        dragging = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    },
-                    onDrag = { change, amount ->
-                        change.consume()
-                        pos = Offset(
-                            (pos.x + amount.x).coerceIn(0f, areaW - sizePx),
-                            (pos.y + amount.y).coerceIn(0f, areaH - sizePx),
-                        )
-                    },
-                    onDragEnd = {
-                        dragging = false
-                        state.setButton((pos.x + sizePx / 2) / areaW, (pos.y + sizePx / 2) / areaH)
-                    },
-                    onDragCancel = { dragging = false },
-                )
+            .pointerInput(areaW, areaH, sizePx) {
+                val longPressMs = viewConfiguration.longPressTimeoutMillis
+                val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
+                val slop = viewConfiguration.touchSlop
+                var pendingTap: Job? = null
+                var lastTapUp = 0L
+                val half = sizePx / 2
+
+                coroutineScope {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        // only the flower counts, not the empty corners of its square
+                        if (hypot(down.position.x - half, down.position.y - half) > half) return@awaitEachGesture
+                        down.consume()
+
+                        var released = false
+                        var movedEarly = false
+                        val longPressed = withTimeoutOrNull(longPressMs) {
+                            while (true) {
+                                val ev = awaitPointerEvent()
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!ch.pressed) { ch.consume(); released = true; break }
+                                if ((ch.position - down.position).getDistance() > slop) { movedEarly = true; break }
+                            }
+                            false
+                        } ?: true
+
+                        when {
+                            released -> {
+                                val now = System.currentTimeMillis()
+                                if (pendingTap?.isActive == true && now - lastTapUp <= doubleTapMs) {
+                                    pendingTap?.cancel()
+                                    pendingTap = null
+                                    doubleTap()
+                                } else {
+                                    lastTapUp = now
+                                    pendingTap = launch {
+                                        delay(doubleTapMs)
+                                        tap()
+                                    }
+                                }
+                            }
+                            longPressed && !movedEarly -> {
+                                pendingTap?.cancel()
+                                dragging = true
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                while (true) {
+                                    val ev = awaitPointerEvent()
+                                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!ch.pressed) { ch.consume(); break }
+                                    val delta = ch.position - ch.previousPosition
+                                    ch.consume()
+                                    pos = Offset(
+                                        (pos.x + delta.x).coerceIn(0f, (areaW - sizePx).coerceAtLeast(0f)),
+                                        (pos.y + delta.y).coerceIn(0f, (areaH - sizePx).coerceAtLeast(0f)),
+                                    )
+                                }
+                                dragging = false
+                                state.setButton((pos.x + half) / areaW, (pos.y + half) / areaH)
+                            }
+                            else -> Unit // moved before the long-press: not ours, ignore
+                        }
+                    }
+                }
             }
     ) {
-        Canvas(Modifier.fillMaxSize()) { drawRose(accent) }
+        // Visual effects live on the child so they never distort touch coordinates.
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val s = if (dragging) 1.15f else 1f
+                    scaleX = s
+                    scaleY = s
+                    rotationZ = if (dragging) 12f else 0f
+                }
+        ) { drawRose(accent) }
     }
 }
 
