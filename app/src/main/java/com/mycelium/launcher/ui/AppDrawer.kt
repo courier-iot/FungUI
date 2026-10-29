@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +56,7 @@ import com.mycelium.launcher.ui.theme.Cream
 import com.mycelium.launcher.util.openAppInfo
 import kotlinx.coroutines.launch
 
+private const val COLUMNS = 4
 private val RAIL: List<Char> = listOf('#') + ('A'..'Z').toList()
 
 private fun letterOf(label: String): Char {
@@ -78,10 +81,12 @@ fun AppDrawer(
         if (query.isBlank()) apps else apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
     }
     val groups = remember(filtered) { filtered.groupBy { letterOf(it.label) }.toSortedMap() }
-    val headerIndex = remember(groups) {
+    // Each letter = one sticky header + rows of COLUMNS icons.
+    val rows = remember(groups) { groups.mapValues { (_, v) -> v.chunked(COLUMNS) } }
+    val headerIndex = remember(rows) {
         val m = mutableMapOf<Char, Int>()
         var i = 0
-        groups.forEach { (k, v) -> m[k] = i; i += 1 + v.size }
+        rows.forEach { (k, v) -> m[k] = i; i += 1 + v.size }
         m
     }
     val listState = rememberLazyListState()
@@ -127,7 +132,7 @@ fun AppDrawer(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                groups.forEach { (letter, list) ->
+                rows.forEach { (letter, letterRows) ->
                     stickyHeader(key = "h_$letter") {
                         Text(
                             letter.toString(),
@@ -140,8 +145,13 @@ fun AppDrawer(
                                 .padding(horizontal = 20.dp, vertical = 6.dp),
                         )
                     }
-                    items(list, key = { it.key }) { app ->
-                        DrawerRow(app, onLaunch, onAddToHome)
+                    items(letterRows, key = { row -> "r_" + row.first().key }) { row ->
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                            row.forEach { app ->
+                                DrawerCell(app, accent, onLaunch, onAddToHome, Modifier.weight(1f))
+                            }
+                            repeat(COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }
@@ -180,20 +190,35 @@ fun AppDrawer(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DrawerRow(app: AppEntry, onLaunch: (AppEntry) -> Unit, onAddToHome: (AppEntry) -> Unit) {
+private fun DrawerCell(
+    app: AppEntry,
+    accent: Color,
+    onLaunch: (AppEntry) -> Unit,
+    onAddToHome: (AppEntry) -> Unit,
+    modifier: Modifier,
+) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
-    Box {
-        Row(
+    Box(modifier) {
+        Column(
             Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
                 .combinedClickable(onClick = { onLaunch(app) }, onLongClick = { menu = true })
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(vertical = 10.dp, horizontal = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Image(bitmap = app.icon, contentDescription = null, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.width(14.dp))
-            Text(app.label, color = Cream, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Image(bitmap = app.icon, contentDescription = null, modifier = Modifier.size(50.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(
+                app.label,
+                color = Cream,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("Add to home page") }, onClick = { menu = false; onAddToHome(app) })

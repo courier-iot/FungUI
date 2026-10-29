@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.mycelium.launcher.data.AppRepository
+import com.mycelium.launcher.data.FontRepository
 import com.mycelium.launcher.data.LauncherState
 import com.mycelium.launcher.util.launchApp
 import com.mycelium.launcher.util.toast
@@ -25,7 +26,7 @@ import com.mycelium.launcher.util.toast
 enum class Screen { HOME, DRAWER, SETTINGS }
 
 @Composable
-fun LauncherRoot(state: LauncherState, repo: AppRepository, homeSignal: Int) {
+fun LauncherRoot(state: LauncherState, repo: AppRepository, fonts: FontRepository, homeSignal: Int) {
     val context = LocalContext.current
     var screen by remember { mutableStateOf(Screen.HOME) }
 
@@ -38,7 +39,7 @@ fun LauncherRoot(state: LauncherState, repo: AppRepository, homeSignal: Int) {
     BackHandler(enabled = screen == Screen.HOME) { }
 
     Box(Modifier.fillMaxSize()) {
-        if (!state.useWallpaper) EarthBackdrop(state.accent)
+        Backdrop(state.backdrop, state.accent)
 
         HomeScreen(
             state = state,
@@ -72,7 +73,7 @@ fun LauncherRoot(state: LauncherState, repo: AppRepository, homeSignal: Int) {
             enter = fadeIn() + slideInVertically { it / 8 },
             exit = fadeOut() + slideOutVertically { it / 8 },
         ) {
-            SettingsScreen(state = state, onClose = { screen = Screen.HOME })
+            SettingsScreen(state = state, fonts = fonts, onClose = { screen = Screen.HOME })
         }
     }
 }

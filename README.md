@@ -1,6 +1,6 @@
 # 🍄 Mycelium Launcher
 
-An earthy Android home-screen launcher — vines, fungi, and a little leaf button.
+An earthy Android home-screen launcher — vines, fungi, and a rose button.
 
 ## Getting the APK (no Android Studio needed)
 
@@ -16,22 +16,25 @@ The debug APK is signed automatically with a debug key, so no signing setup is n
 
 | Feature | How |
 |---|---|
-| Leaf button | Tap → app archive · Double-tap → settings · Hold & drag → move it anywhere |
-| App archive | A–Z sections, sticky letter headers, scrubbable letter rail on the right, search |
+| Rose button | Tap → app archive · Double-tap → settings · Hold & drag → move it anywhere. Tinted by your accent colour |
+| App archive | Icon grid (4 across, names underneath), A–Z sections, scrubbable letter rail, search |
 | Add to home | Long-press an app in the archive → *Add to home page* |
-| Multiple home pages | Swipe left/right. Add/remove pages in settings |
-| Layouts | 4×9, 5×10, or Free place (settings → Home layout) |
+| Multiple home pages | Swipe to flip between pages (card-flip). Add/remove pages in settings |
+| Layouts | 4×9, 5×10, or Free place |
 | Move / remove icons | Hold an icon and drag. Hold without moving → *Remove / App info* |
+| Widgets | Notes works. Hold the header to move, drag the ◢ corner to resize |
 | Accent colour | Earthy presets + hue / saturation / brightness sliders |
-| Backdrop | Hand-drawn forest floor (tinted by your accent) or your system wallpaper |
-| Notes widget | Settings → Widgets → Add Notes. Saves as you type |
+| Fonts | 6 bundled (Lora, Cormorant Garamond, Caveat, Quicksand, Cinzel, Josefin Sans) + upload your own .ttf/.otf |
+| Backdrops | 10 bundled wallpapers, the drawn forest floor, or your phone wallpaper |
+
+The six fonts are downloaded by the GitHub build (`scripts/fetch-fonts.sh`) from the Google Fonts repository. They're all under the SIL Open Font License.
 
 ## Placeholders / roadmap
 
 - **Custom clock** — waiting on design.
 - **YouTube Music playlists** — YT Music has no public playback API. Likely approach: a `NotificationListenerService` to control the active YT Music media session + deep links to open specific playlists.
 - **Proton Calendar** — Proton has no public API, but calendars can be shared as an ICS link. Plan: paste the ICS link in settings, the widget fetches and parses it periodically.
-- **Critters** — sprite layer sitting between the home pages and the leaf button (see the comment in `HomeScreen.kt`).
+- **Critters** — sprite layer sitting between the home pages and the rose button (see the comment in `HomeScreen.kt`).
 
 ## Project layout
 
@@ -41,9 +44,12 @@ app/src/main/java/com/mycelium/launcher/
   data/LauncherState.kt    – settings, pages, placement, persistence
   data/AppRepository.kt    – installed-app scanning
   data/HomeModel.kt        – grid modes, widget types, home items
+  data/Fonts.kt            – bundled + uploaded fonts
+  data/Wallpapers.kt       – the 10 bundled wallpapers
   ui/LauncherRoot.kt       – switches between home / archive / settings
   ui/HomeScreen.kt         – pages, grid & free layout, drag to move
-  ui/LeafButton.kt         – the floating button
+  ui/RoseButton.kt         – the rose button + its shape
+  ui/Backdrop.kt           – wallpaper / forest floor / phone wallpaper
   ui/AppDrawer.kt          – the app archive
   ui/SettingsScreen.kt     – settings + colour picker
   ui/EarthBackdrop.kt      – vines & mushrooms backdrop

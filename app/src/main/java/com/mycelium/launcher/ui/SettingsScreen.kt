@@ -1,6 +1,8 @@
 package com.mycelium.launcher.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,12 +31,11 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,12 +44,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.Image
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mycelium.launcher.data.BACKDROP_FOREST
+import com.mycelium.launcher.data.BACKDROP_SYSTEM
+import com.mycelium.launcher.data.BUNDLED_FONTS
+import com.mycelium.launcher.data.CUSTOM_FONT_PREFIX
+import com.mycelium.launcher.data.FONT_SYSTEM
+import com.mycelium.launcher.data.FontRepository
 import com.mycelium.launcher.data.GridMode
+import com.mycelium.launcher.data.WALLPAPERS
+import com.mycelium.launcher.data.decodeWallpaper
 import com.mycelium.launcher.data.LauncherState
 import com.mycelium.launcher.data.WidgetType
 import com.mycelium.launcher.ui.theme.Amanita
@@ -66,7 +82,7 @@ import com.mycelium.launcher.util.openHomeSettings
 import com.mycelium.launcher.util.toast
 
 @Composable
-fun SettingsScreen(state: LauncherState, onClose: () -> Unit) {
+fun SettingsScreen(state: LauncherState, fonts: FontRepository, onClose: () -> Unit) {
     BackHandler { onClose() }
     val context = LocalContext.current
     val accent = state.accent
@@ -92,6 +108,14 @@ fun SettingsScreen(state: LauncherState, onClose: () -> Unit) {
 
         Section("Accent colour", accent) {
             AccentPicker(initial = accent, onChange = state::updateAccent)
+        }
+
+        Section("Font", accent) {
+            FontPicker(state, fonts)
+        }
+
+        Section("Backdrop", accent) {
+            WallpaperPicker(state)
         }
 
         Section("Home layout", accent) {
@@ -130,7 +154,7 @@ fun SettingsScreen(state: LauncherState, onClose: () -> Unit) {
         }
 
         Section("Widgets", accent) {
-            Hint("Added to the page you were on (page ${state.currentPage + 1}).")
+            Hint("Added to the page you were on (page ${state.currentPage + 1}). Drag a widget's ◢ corner to resize it.")
             Spacer(Modifier.height(6.dp))
             WidgetType.entries.forEach { type ->
                 OutlinedButton(
@@ -144,21 +168,16 @@ fun SettingsScreen(state: LauncherState, onClose: () -> Unit) {
             Hint("YouTube Music and Proton Calendar are placeholders for now. Custom clock is waiting on your design.")
         }
 
-        Section("Backdrop", accent) {
+        Section("Rose button", accent) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Use system wallpaper instead of forest floor", color = Cream, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = state.useWallpaper,
-                    onCheckedChange = state::updateWallpaper,
-                    colors = SwitchDefaults.colors(checkedTrackColor = accent, checkedThumbColor = Cream),
-                )
+                RosePreview(accent, Modifier.size(72.dp))
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Hint("Tap: app archive · Double-tap: settings · Hold & drag: move. The rose takes your accent colour.")
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = { state.resetButton() }) { Text("Reset position", color = Cream) }
+                }
             }
-        }
-
-        Section("Leaf button", accent) {
-            Hint("Tap: app archive · Double-tap: settings · Hold & drag: move")
-            Spacer(Modifier.height(6.dp))
-            OutlinedButton(onClick = { state.resetButton() }) { Text("Reset position", color = Cream) }
         }
 
         Section("System", accent) {
@@ -279,4 +298,114 @@ fun AccentPicker(initial: Color, onChange: (Color) -> Unit) {
     Slider(value = sat, onValueChange = { sat = it; push() }, valueRange = 0f..1f, colors = sliderColors)
     Text("Brightness", color = Cream.copy(alpha = 0.7f), fontSize = 12.sp)
     Slider(value = value, onValueChange = { value = it; push() }, valueRange = 0.15f..1f, colors = sliderColors)
+}
+
+
+private const val FONT_SAMPLE = "Moss grows quietly"
+
+@Composable
+private fun FontPicker(state: LauncherState, fonts: FontRepository) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val id = fonts.import(uri)
+            if (id == null) context.toast("That file isn't a font Android can read (.ttf / .otf)")
+            else {
+                state.updateFont(id)
+                context.toast("Font added")
+            }
+        }
+    }
+
+    FontOption(state, fonts, FONT_SYSTEM, "System default", false)
+    BUNDLED_FONTS.forEach { FontOption(state, fonts, it.id, it.label, false) }
+    fonts.customFonts.forEach { name ->
+        FontOption(state, fonts, CUSTOM_FONT_PREFIX + name, name.substringBeforeLast('.'), true)
+    }
+    Spacer(Modifier.height(6.dp))
+    OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+        Text("Upload a font (.ttf / .otf)", color = Cream)
+    }
+}
+
+@Composable
+private fun WallpaperPicker(state: LauncherState) {
+    val context = LocalContext.current
+
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        WallpaperTile(state, BACKDROP_FOREST, "Forest floor") { EarthBackdrop(state.accent) }
+        WALLPAPERS.forEach { wp ->
+            WallpaperTile(state, wp.id, wp.label) {
+                val thumb by produceState<ImageBitmap?>(null, wp.id) {
+                    value = withContext(Dispatchers.IO) { decodeWallpaper(context, wp.res, 135)?.asImageBitmap() }
+                }
+                val t = thumb
+                if (t != null) Image(t, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Box(Modifier.fillMaxSize().background(Soil))
+            }
+        }
+        WallpaperTile(state, BACKDROP_SYSTEM, "Phone wallpaper") {
+            Box(Modifier.fillMaxSize().background(Bark), contentAlignment = Alignment.Center) {
+                Text("Your\nwallpaper", color = Cream.copy(alpha = 0.6f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontOption(state: LauncherState, fonts: FontRepository, id: String, label: String, deletable: Boolean) {
+    val accent = state.accent
+    val available = fonts.isAvailable(id)
+    val family = fonts.family(id)
+    val selected = state.fontId == id
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.5.dp, if (selected) accent else Cream.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+            .clickable(enabled = available) { state.updateFont(id) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                color = if (available) Cream else Cream.copy(alpha = 0.35f),
+                fontSize = 16.sp,
+                fontFamily = family,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (available) FONT_SAMPLE else "Not included in this build",
+                color = Cream.copy(alpha = 0.55f),
+                fontSize = 12.sp,
+                fontFamily = family,
+            )
+        }
+        if (deletable) {
+            TextButton(onClick = {
+                if (selected) state.updateFont(FONT_SYSTEM)
+                fonts.delete(id)
+            }) { Text("✕", color = Cream.copy(alpha = 0.6f)) }
+        }
+    }
+}
+
+@Composable
+private fun WallpaperTile(state: LauncherState, id: String, label: String, content: @Composable () -> Unit) {
+    val selected = state.backdrop == id
+    Column(
+        Modifier.padding(end = 10.dp).width(84.dp).clickable { state.updateBackdrop(id) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(84.dp, 182.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(2.dp, if (selected) state.accent else Color.Transparent, RoundedCornerShape(12.dp))
+        ) { content() }
+        Text(label, color = Cream.copy(alpha = if (selected) 1f else 0.65f), fontSize = 10.sp, maxLines = 1)
+    }
 }

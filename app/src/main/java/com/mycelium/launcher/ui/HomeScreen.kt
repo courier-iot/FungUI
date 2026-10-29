@@ -2,6 +2,8 @@ package com.mycelium.launcher.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -18,10 +20,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +48,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -58,6 +62,8 @@ import com.mycelium.launcher.ui.theme.Cream
 import com.mycelium.launcher.ui.widgets.WidgetCard
 import com.mycelium.launcher.util.launchApp
 import com.mycelium.launcher.util.openAppInfo
+import com.mycelium.launcher.util.toast
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -84,14 +90,16 @@ fun HomeScreen(
                 state = pagerState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             ) { pageIndex ->
-                HomePage(state, pageIndex, apps)
+                Box(Modifier.fillMaxSize().flipPage(pagerState, pageIndex)) {
+                    HomePage(state, pageIndex, apps)
+                }
             }
             PageDots(state.pages.size, pagerState.currentPage, state.accent)
         }
 
-        // Sprite / critter layer will sit here, above the pages and below the leaf button.
+        // Sprite / critter layer will sit here, above the pages and below the rose.
 
-        LeafButton(
+        RoseButton(
             state = state,
             areaW = areaW,
             areaH = areaH,
@@ -99,6 +107,18 @@ fun HomeScreen(
             onDoubleTap = onOpenSettings,
         )
     }
+}
+
+/**
+ * Card-flip transition: each page stays centred and spins around its vertical axis.
+ * At the halfway point the outgoing page is edge-on and the incoming one takes over.
+ */
+private fun Modifier.flipPage(pagerState: PagerState, page: Int): Modifier = graphicsLayer {
+    val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+    cameraDistance = 14f * density
+    translationX = offset * size.width
+    rotationY = offset * 180f
+    alpha = if (abs(offset) <= 0.5f) 1f else 0f
 }
 
 @Composable
@@ -142,6 +162,8 @@ private fun HomeItemView(
 
     var drag by remember { mutableStateOf(Offset.Zero) }
     var dragging by remember { mutableStateOf(false) }
+    var resize by remember { mutableStateOf(Offset.Zero) }
+    var resizing by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
     // Hold → drag to move. Hold without moving → item menu.
@@ -182,13 +204,35 @@ private fun HomeItemView(
         )
     }
 
+    // Widgets only: drag the corner grip to resize, snapping to whole cells on release.
+    val resizeModifier = Modifier.pointerInput(item, mode, areaW, areaH) {
+        detectDragGestures(
+            onDragStart = { resizing = true; resize = Offset.Zero },
+            onDrag = { change, amount ->
+                change.consume()
+                resize += amount
+            },
+            onDragEnd = {
+                resizing = false
+                val w = ((itemW + resize.x) / cellW).roundToInt()
+                val h = ((itemH + resize.y) / cellH).roundToInt()
+                if (!state.resizeWidget(pageIndex, item.id, w, h)) context.toast("Not enough room there")
+                resize = Offset.Zero
+            },
+            onDragCancel = { resizing = false; resize = Offset.Zero },
+        )
+    }
+
+    val shownW = (itemW + resize.x).coerceAtLeast(cellW)
+    val shownH = (itemH + resize.y).coerceAtLeast(cellH * 0.8f)
+
     Box(
         Modifier
             .offset { IntOffset((baseX + drag.x).roundToInt(), (baseY + drag.y).roundToInt()) }
-            .size(with(density) { itemW.toDp() }, with(density) { itemH.toDp() })
-            .zIndex(if (dragging) 1f else 0f)
+            .size(with(density) { shownW.toDp() }, with(density) { shownH.toDp() })
+            .zIndex(if (dragging || resizing) 1f else 0f)
             .graphicsLayer {
-                val s = if (dragging) 1.08f else 1f
+                val s = if (dragging) 1.06f else 1f
                 scaleX = s
                 scaleY = s
                 alpha = if (dragging) 0.85f else 1f
@@ -207,7 +251,18 @@ private fun HomeItemView(
                     .then(dragModifier),
             )
         } else {
-            WidgetCard(state, item, state.accent, dragModifier)
+            WidgetCard(state, item, state.accent, dragModifier, resizeModifier)
+            if (resizing) {
+                // snapped outline preview
+                val snapW = ((itemW + resize.x) / cellW).roundToInt().coerceAtLeast(1) * cellW
+                val snapH = ((itemH + resize.y) / cellH).roundToInt().coerceAtLeast(1) * cellH
+                Box(
+                    Modifier
+                        .size(with(density) { snapW.toDp() }, with(density) { snapH.toDp() })
+                        .padding(2.dp)
+                        .border(2.dp, state.accent, RoundedCornerShape(18.dp))
+                )
+            }
         }
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -242,7 +297,7 @@ private fun AppIcon(app: AppEntry, cellW: Float, cellH: Float, modifier: Modifie
             fontSize = 11.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(1f, 1f), 4f)),
+            style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(1f, 1f), 4f)),
             modifier = Modifier.padding(horizontal = 2.dp),
         )
     }

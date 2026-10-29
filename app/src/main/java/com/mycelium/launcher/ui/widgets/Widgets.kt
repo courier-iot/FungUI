@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -35,34 +36,55 @@ import com.mycelium.launcher.ui.theme.Soil
 
 /** Common frame for home widgets. The header strip is the drag handle (hold to move / remove). */
 @Composable
-fun WidgetCard(state: LauncherState, item: HomeItem, accent: Color, handleModifier: Modifier) {
+fun WidgetCard(
+    state: LauncherState,
+    item: HomeItem,
+    accent: Color,
+    handleModifier: Modifier,
+    resizeModifier: Modifier,
+) {
     val type = WidgetType.from(item.widget) ?: return
     val shape = RoundedCornerShape(18.dp)
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(4.dp)
-            .clip(shape)
-            .background(Soil.copy(alpha = 0.82f))
-            .border(1.dp, accent.copy(alpha = 0.45f), shape)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().then(handleModifier).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(4.dp)
+                .clip(shape)
+                .background(Soil.copy(alpha = 0.82f))
+                .border(1.dp, accent.copy(alpha = 0.45f), shape)
         ) {
-            Text(
-                "❦  ${type.label}",
-                color = accent,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            Text("⋮⋮", color = Cream.copy(alpha = 0.45f), fontSize = 12.sp)
+            Row(
+                Modifier.fillMaxWidth().then(handleModifier).padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "❦  ${type.label}",
+                    color = accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("⋮⋮", color = Cream.copy(alpha = 0.45f), fontSize = 12.sp)
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (type) {
+                    WidgetType.NOTES -> NotesBody(state, item.id, accent)
+                    WidgetType.MUSIC -> Placeholder("Playlist controls will grow here.")
+                    WidgetType.CALENDAR -> Placeholder("Proton Calendar events will sprout here.")
+                }
+            }
         }
-        when (type) {
-            WidgetType.NOTES -> NotesBody(state, item.id, accent)
-            WidgetType.MUSIC -> Placeholder("Playlist controls will grow here.")
-            WidgetType.CALENDAR -> Placeholder("Proton Calendar events will sprout here.")
+        // Resize grip (bottom-right corner)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .size(30.dp)
+                .then(resizeModifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("◢", color = accent.copy(alpha = 0.8f), fontSize = 14.sp)
         }
     }
 }
@@ -76,7 +98,7 @@ private fun NotesBody(state: LauncherState, id: Long, accent: Color) {
             text = it
             state.setNote(id, it)
         },
-        textStyle = TextStyle(color = Cream, fontSize = 14.sp),
+        textStyle = LocalTextStyle.current.copy(color = Cream, fontSize = 14.sp),
         cursorBrush = SolidColor(accent),
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
         decorationBox = { inner ->

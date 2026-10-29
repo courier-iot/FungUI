@@ -12,11 +12,14 @@ enum class GridMode(val cols: Int, val rows: Int, val label: String) {
     FREE(4, 9, "Free place"),
 }
 
-/** Widgets span the full width of the grid and [rows] cells tall. */
-enum class WidgetType(val id: String, val label: String, val rows: Int) {
-    NOTES("notes", "Notes", 2),
-    MUSIC("music", "YouTube Music", 1),
-    CALENDAR("calendar", "Proton Calendar", 3);
+/**
+ * Widget types. Default size is full grid width × [rows] tall; users can resize
+ * down to [minW] × [minH] cells.
+ */
+enum class WidgetType(val id: String, val label: String, val rows: Int, val minW: Int, val minH: Int) {
+    NOTES("notes", "Notes", 2, 2, 1),
+    MUSIC("music", "YouTube Music", 1, 2, 1),
+    CALENDAR("calendar", "Proton Calendar", 3, 2, 2);
     // CLOCK will slot in here once its design is described.
 
     companion object {
@@ -27,6 +30,7 @@ enum class WidgetType(val id: String, val label: String, val rows: Int) {
 /**
  * One thing living on a home page: an app shortcut or a widget.
  * [col]/[row] are used by the grid layouts, [fx]/[fy] (0..1 fractions of the page) by free mode.
+ * [sw]/[sh] are a widget's custom size in cells (0 = default).
  */
 data class HomeItem(
     val id: Long,
@@ -38,12 +42,16 @@ data class HomeItem(
     val row: Int = 0,
     val fx: Float = 0f,
     val fy: Float = 0f,
+    val sw: Int = 0,
+    val sh: Int = 0,
 ) {
     val appKey: String get() = "$pkg/$cls"
 
     fun span(mode: GridMode): Pair<Int, Int> {
         if (kind != KIND_WIDGET) return 1 to 1
         val type = WidgetType.from(widget) ?: return 1 to 1
-        return mode.cols to min(type.rows, mode.rows)
+        val w = if (sw > 0) sw else mode.cols
+        val h = if (sh > 0) sh else type.rows
+        return min(w, mode.cols) to min(h, mode.rows)
     }
 }

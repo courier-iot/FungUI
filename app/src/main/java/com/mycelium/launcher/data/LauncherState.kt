@@ -16,6 +16,11 @@ import kotlin.math.roundToInt
 
 private val DEFAULT_ACCENT = 0xFF6B8E4E.toInt() // moss
 
+const val BACKDROP_FOREST = "forest"
+const val BACKDROP_SYSTEM = "system"
+const val FONT_SYSTEM = "system"
+const val CUSTOM_FONT_PREFIX = "custom:"
+
 /** All launcher settings + home page contents, persisted to SharedPreferences. */
 class LauncherState(context: Context) {
     private val prefs = context.getSharedPreferences("mycelium_prefs", Context.MODE_PRIVATE)
@@ -29,10 +34,18 @@ class LauncherState(context: Context) {
     )
         private set
 
-    var useWallpaper by mutableStateOf(prefs.getBoolean("wallpaper", false))
+    /** "forest" (drawn), "system" (phone wallpaper) or a bundled wallpaper id like "wp_01". */
+    var backdrop by mutableStateOf(
+        prefs.getString("backdrop", null)
+            ?: if (prefs.getBoolean("wallpaper", false)) BACKDROP_SYSTEM else BACKDROP_FOREST
+    )
         private set
 
-    /** Leaf button centre, as fractions of the screen. */
+    /** Font id: "system", a bundled font id, or "custom:<file name>". */
+    var fontId by mutableStateOf(prefs.getString("font", FONT_SYSTEM) ?: FONT_SYSTEM)
+        private set
+
+    /** Rose button centre, as fractions of the screen. */
     var buttonX by mutableFloatStateOf(prefs.getFloat("btnX", 0.5f))
         private set
     var buttonY by mutableFloatStateOf(prefs.getFloat("btnY", 0.88f))
@@ -60,9 +73,14 @@ class LauncherState(context: Context) {
         prefs.edit().putInt("accent", c.toArgb()).apply()
     }
 
-    fun updateWallpaper(on: Boolean) {
-        useWallpaper = on
-        prefs.edit().putBoolean("wallpaper", on).apply()
+    fun updateBackdrop(id: String) {
+        backdrop = id
+        prefs.edit().putString("backdrop", id).apply()
+    }
+
+    fun updateFont(id: String) {
+        fontId = id
+        prefs.edit().putString("font", id).apply()
     }
 
     fun setButton(x: Float, y: Float) {
@@ -145,6 +163,27 @@ class LauncherState(context: Context) {
         val occ = occupancy(list.filter { it.id != id }, mode)
         if (!fitsAt(occ, c, r, w, h, mode)) return false
         pages[page] = list.map { if (it.id == id) it.copy(col = c, row = r) else it }
+        savePages()
+        return true
+    }
+
+    /** Resize a widget to [w]×[h] cells. Returns false if it would overlap something. */
+    fun resizeWidget(page: Int, id: Long, w: Int, h: Int): Boolean {
+        val mode = gridMode
+        val list = pages.getOrNull(page) ?: return false
+        val item = list.find { it.id == id } ?: return false
+        val type = WidgetType.from(item.widget) ?: return false
+        val col0 = if (mode == GridMode.FREE) (item.fx * mode.cols).roundToInt() else item.col
+        val row0 = if (mode == GridMode.FREE) (item.fy * mode.rows).roundToInt() else item.row
+        val maxW = if (mode == GridMode.FREE) mode.cols else mode.cols - item.col
+        val maxH = if (mode == GridMode.FREE) mode.rows else mode.rows - item.row
+        val nw = w.coerceIn(min(type.minW, maxW), maxW.coerceAtLeast(1))
+        val nh = h.coerceIn(min(type.minH, maxH), maxH.coerceAtLeast(1))
+        if (mode != GridMode.FREE) {
+            val occ = occupancy(list.filter { it.id != id }, mode)
+            if (!fitsAt(occ, col0, row0, nw, nh, mode)) return false
+        }
+        pages[page] = list.map { if (it.id == id) it.copy(sw = nw, sh = nh) else it }
         savePages()
         return true
     }
@@ -264,6 +303,8 @@ class LauncherState(context: Context) {
                         .put("row", item.row)
                         .put("fx", item.fx.toDouble())
                         .put("fy", item.fy.toDouble())
+                        .put("sw", item.sw)
+                        .put("sh", item.sh)
                 )
             }
             arr.put(pa)
@@ -289,6 +330,8 @@ class LauncherState(context: Context) {
                         row = o.optInt("row"),
                         fx = o.optDouble("fx", 0.0).toFloat(),
                         fy = o.optDouble("fy", 0.0).toFloat(),
+                        sw = o.optInt("sw", 0),
+                        sh = o.optInt("sh", 0),
                     )
                 }
                 pages.add(items)
