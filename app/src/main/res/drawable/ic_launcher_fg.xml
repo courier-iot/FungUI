@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- moss mound -->
+    <path android:fillColor="#4F7942" android:pathData="M28,80 Q54,68 80,80 Z" />
+    <!-- stem -->
+    <path android:fillColor="#EDE3CF" android:pathData="M49,56 L59,56 L61,78 Q54,81 47,78 Z" />
+    <!-- cap -->
+    <path android:fillColor="#B5651D" android:pathData="M30,58 Q30,30 54,30 Q78,30 78,58 Z" />
+    <!-- spots -->
+    <path android:fillColor="#EDE3CF" android:pathData="M42,44 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#EDE3CF" android:pathData="M58,38 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path android:fillColor="#EDE3CF" android:pathData="M68,50 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+</vector>
